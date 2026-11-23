@@ -2,6 +2,12 @@
 
 [Watch the 30-second demo](trackbasic-demo.mp4) (sound recorded from the trackpad with the MacBook's microphone).
 
+
+
+https://github.com/user-attachments/assets/52685075-5b2a-4bd7-bdad-70ca9756b426
+
+
+
 A QBasic-style IDE and interpreter for macOS whose PC speaker is your **MacBook trackpad**.
 
 `SOUND`, `PLAY` and `BEEP` don't go to the speakers: they drive the Force Touch trackpad's haptic
