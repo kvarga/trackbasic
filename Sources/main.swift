@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return i
     }
 
-    private func buildMenus() {
+    func buildMenus() {
         let main = NSMenu()
 
         let appMenu = NSMenu()
@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         run.addItem(item("Start", #selector(runProgram), "r"))
         run.addItem(item("Stop", #selector(stopProgram), "."))
         run.addItem(item("Output Screen", #selector(toggleOutput), "4"))
+        run.items[0].toolTip = "F5"; run.items[1].toolTip = "Ctrl+C"; run.items[2].toolTip = "F4"
         let runItem = NSMenuItem(); runItem.submenu = run; main.addItem(runItem)
 
         let sound = NSMenu(title: "Sound")
@@ -108,13 +109,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         sound.addItem(item("Test: Sweep 100 Hz to 4 kHz", #selector(testSweep)))
         let soundItem = NSMenuItem(); soundItem.submenu = sound; main.addItem(soundItem)
 
+        let help = NSMenu(title: "Help")
+        help.addItem(item("TrackBASIC Help", #selector(showHelp)))
+        help.items[0].toolTip = "F1"
+        help.addItem(.separator())
+        help.addItem(withTitle: "About TrackBASIC", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        let helpItem = NSMenuItem(); helpItem.submenu = help
+
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
         let windowItem = NSMenuItem(); windowItem.submenu = windowMenu; main.addItem(windowItem)
         NSApp.windowsMenu = windowMenu
+        main.addItem(helpItem)
 
         NSApp.mainMenu = main
+        // The blue window's own menu bar offers the same menus.
+        let inWindow = [fileItem, editItem, runItem, soundItem, helpItem]
+        ide.menuSource = { inWindow }
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
@@ -211,6 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc func runProgram() { ide.run() }
+    @objc func showHelp() { ide.showHelp() }
     @objc func stopProgram() { ide.stop() }
     @objc func toggleOutput() { ide.toggleOutput() }
 
@@ -321,9 +334,28 @@ if CommandLine.arguments.contains("--listen") { exit(runListen(CommandLine.argum
 /// Render test: `TrackBASIC --png OUT.png [FILE.BAS]` draws the editor offscreen and saves it.
 if let i = CommandLine.arguments.firstIndex(of: "--png"), i + 1 < CommandLine.arguments.count {
     let args = CommandLine.arguments
-    let ide = IDE()
+    _ = NSApplication.shared
+    let d = AppDelegate()
+    d.buildMenus()
+    let ide = d.ide
     if i + 2 < args.count, let text = try? String(contentsOfFile: args[i + 2], encoding: .utf8) {
         ide.load(text: text, url: URL(fileURLWithPath: args[i + 2]))
+    }
+    if let m = args.firstIndex(of: "--menu"), m + 1 < args.count, let n = Int(args[m + 1]) { ide.openMenu(n, open: true) }
+    // `--mouse "row,col,down;row,col,up"` sends clicks to text cells; `--alt` taps Option alone.
+    if let m = args.firstIndex(of: "--mouse"), m + 1 < args.count {
+        for ev in args[m + 1].split(separator: ";") {
+            let f = ev.split(separator: ",")
+            let phase: ScreenView.MousePhase = f[2] == "down" ? .down : f[2] == "up" ? .up : .drag
+            ide.view.onMouse?(Int(f[0])!, Int(f[1])!, phase)
+        }
+    }
+    if args.contains("--alt") {
+        for flags in [NSEvent.ModifierFlags.option, []] {
+            let e = NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                                     context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58)!
+            ide.view.onFlags?(e)
+        }
     }
     let v = ide.view
     v.frame = NSRect(x: 0, y: 0, width: 960, height: 720)

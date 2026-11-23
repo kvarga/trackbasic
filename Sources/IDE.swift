@@ -15,7 +15,7 @@ final class IDE {
     private(set) var fileURL: URL?
     private(set) var dirty = false
 
-    private enum Mode { case editing, running, finished, viewingOutput, dialog(String), help(Int) }
+    private enum Mode { case editing, running, finished, viewingOutput, dialog(String), help(Int), menu(bar: Int, open: Bool, item: Int) }
     private var mode = Mode.editing
 
     private let keys = KeyQueue()
@@ -29,7 +29,9 @@ final class IDE {
 
     init() {
         view = ScreenView(screen: editorScreen)
-        view.onKey = { [weak self] e in self?.key(e) }
+        view.onKey = { [weak self] e in self?.altAlone = false; self?.key(e) }
+        view.onFlags = { [weak self] e in self?.flags(e) }
+        view.onMouse = { [weak self] r, c, p in self?.mouse(r, c, p) }
         render()
     }
 
@@ -224,10 +226,260 @@ final class IDE {
             if fkey == NSPageDownFunctionKey || fkey == NSDownArrowFunctionKey || lower == " " { mode = .help(min(page + 1, IDE.help.count - 1)); render() }
             else if fkey == NSPageUpFunctionKey || fkey == NSUpArrowFunctionKey { mode = .help(max(page - 1, 0)); render() }
             else { mode = .editing; render() }
+        case .menu(let bar, let open, let item):
+            menuKey(e, bar: bar, open: open, item: item, lower: lower, fkey: fkey)
         case .editing:
+            if fkey == NSF10FunctionKey { openMenu(0, open: false); return }
+            // Option+letter opens that menu, as Alt+letter does in QBasic.
+            if e.modifierFlags.contains(.option), !ctrl, let b = barIndex(hotkey: lower) { openMenu(b, open: true); return }
             editKey(e, ctrl: ctrl, lower: lower, fkey: fkey)
         }
     }
+
+    // MARK: Menus
+
+    /// The menus shown in the blue window's bar: the app's own menus (File, Edit, Run, Sound, Help), set by
+    /// the app delegate, so the two always offer the same commands.
+    var menuSource: (() -> [NSMenuItem])?
+
+    private struct Entry {
+        let item: NSMenuItem?      // nil = separator
+        let label: String
+        let hint: String
+        let hotkey: Character?
+    }
+
+    private var bars: [NSMenuItem] { menuSource?() ?? [] }
+
+    private func entries(_ bar: Int) -> [Entry] {
+        let all = bars
+        guard bar < all.count, let menu = all[bar].submenu else { return [] }
+        var flat: [NSMenuItem?] = []
+        for i in menu.items {
+            if i.isSeparatorItem { flat.append(nil) }
+            else if let sub = i.submenu { flat.append(nil); flat += sub.items.map { $0.isSeparatorItem ? nil : $0 } }
+            else { flat.append(i) }
+        }
+        // No separators at either end or twice in a row.
+        var cleaned: [NSMenuItem?] = []
+        for i in flat where !(i == nil && (cleaned.isEmpty || cleaned.last! == nil)) { cleaned.append(i) }
+        if cleaned.last.map({ $0 == nil }) == true { cleaned.removeLast() }
+
+        var used = Set<Character>()
+        return cleaned.map { i in
+            guard let i else { return Entry(item: nil, label: "", hint: "", hotkey: nil) }
+            let label = i.title
+            let key = label.lowercased().first { $0.isLetter && !used.contains($0) }
+            if let key { used.insert(key) }
+            return Entry(item: i, label: label, hint: IDE.hint(i), hotkey: key)
+        }
+    }
+
+    private static func hint(_ i: NSMenuItem) -> String {
+        if let t = i.toolTip { return t }
+        guard !i.keyEquivalent.isEmpty else { return "" }
+        let m = i.keyEquivalentModifierMask
+        var s = ""
+        if m.contains(.control) { s += "⌃" }
+        if m.contains(.option) { s += "⌥" }
+        if m.contains(.shift) { s += "⇧" }
+        if m.contains(.command) { s += "⌘" }
+        return s + i.keyEquivalent.uppercased()
+    }
+
+    private func enabled(_ i: NSMenuItem) -> Bool {
+        guard i.action != nil else { return false }
+        if let v = i.target as? NSMenuItemValidation { return v.validateMenuItem(i) }
+        return true
+    }
+
+    /// Column of each bar title. Help sits at the right, as in QBasic.
+    private func barColumns() -> [Int] {
+        var col = 2
+        return bars.map { b in
+            if b.submenu?.title == "Help" { return 80 - 2 - b.submenu!.title.count }
+            defer { col += b.submenu!.title.count + 2 }
+            return col
+        }
+    }
+
+    private func barIndex(hotkey: String) -> Int? {
+        guard let k = hotkey.first else { return nil }
+        return bars.firstIndex { $0.submenu?.title.lowercased().first == k }
+    }
+
+    func openMenu(_ bar: Int, open: Bool) {
+        guard !bars.isEmpty else { return }
+        tidy(cy)
+        let b = (bar + bars.count) % bars.count
+        mode = .menu(bar: b, open: open, item: open ? step(b, from: -1, by: 1) : 0)
+        render()
+    }
+
+    private func closeMenu() { mode = .editing; render() }
+
+    /// The next item that isn't a separator, going `by` ±1 and wrapping.
+    private func step(_ bar: Int, from: Int, by: Int) -> Int {
+        let e = entries(bar)
+        guard !e.isEmpty else { return 0 }
+        var i = from
+        for _ in 0..<e.count {
+            i = (i + by + e.count) % e.count
+            if e[i].item != nil { return i }
+        }
+        return 0
+    }
+
+    private func choose(_ bar: Int, _ index: Int) {
+        let e = entries(bar)
+        guard index >= 0, index < e.count, let item = e[index].item, enabled(item) else { return }
+        closeMenu()
+        NSApp.sendAction(item.action!, to: item.target, from: item)
+    }
+
+    private func menuKey(_ e: NSEvent, bar: Int, open: Bool, item: Int, lower: String, fkey: Int) {
+        switch fkey {
+        case NSLeftArrowFunctionKey: openMenu(bar - 1, open: open); return
+        case NSRightArrowFunctionKey: openMenu(bar + 1, open: open); return
+        case NSDownArrowFunctionKey:
+            if open { mode = .menu(bar: bar, open: true, item: step(bar, from: item, by: 1)); render() } else { openMenu(bar, open: true) }
+            return
+        case NSUpArrowFunctionKey:
+            if open { mode = .menu(bar: bar, open: true, item: step(bar, from: item, by: -1)); render() } else { openMenu(bar, open: true) }
+            return
+        case NSF10FunctionKey: closeMenu(); return
+        default: break
+        }
+        switch e.characters?.unicodeScalars.first?.value ?? 0 {
+        case 0x1B: closeMenu()
+        case 0x0D, 0x03, 0x20: if open { choose(bar, item) } else { openMenu(bar, open: true) }
+        default:
+            guard let k = lower.first else { return }
+            if open, let i = entries(bar).firstIndex(where: { $0.hotkey == k }) { choose(bar, i) }
+            else if let b = barIndex(hotkey: lower) { openMenu(b, open: true) }
+        }
+    }
+
+    /// Alt pressed and released on its own enters or leaves the menu bar, as in QBasic.
+    private var altAlone = false
+    private func flags(_ e: NSEvent) {
+        let m = e.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if m == .option { altAlone = true; return }
+        guard m.isEmpty, altAlone else { altAlone = false; return }
+        altAlone = false
+        switch mode {
+        case .editing: openMenu(0, open: false)
+        case .menu: closeMenu()
+        default: break
+        }
+    }
+
+    /// The drop-down's box for a bar: rows r0…r1, columns c0…c1.
+    private func dropBox(_ bar: Int) -> (r0: Int, c0: Int, r1: Int, c1: Int, width: Int) {
+        let e = entries(bar)
+        let labelW = e.map(\.label.count).max() ?? 0, hintW = e.map(\.hint.count).max() ?? 0
+        let w = labelW + (hintW > 0 ? hintW + 3 : 0) + 4
+        var c0 = barColumns()[bar] - 1
+        c0 = min(c0, 77 - w)
+        return (1, c0, 1 + e.count + 1, c0 + w - 1, w)
+    }
+
+    private func drawMenu(_ s: Screen, bar: Int, open: Bool, item: Int) {
+        let cols = barColumns(), title = bars[bar].submenu!.title
+        s.text(0, cols[bar] - 1, " " + title + " ", fg: 7, bg: 0)
+        guard open else { return }
+        let e = entries(bar)
+        let (r0, c0, r1, c1, w) = dropBox(bar)
+        box(s, r0, c0, r1, c1, fg: 0, bg: 7)
+        for (i, en) in e.enumerated() {
+            let row = r0 + 1 + i
+            guard let it = en.item else {
+                s.put(row, c0, Screen.code("├"), fg: 0, bg: 7)
+                for c in (c0 + 1)..<c1 { s.put(row, c, Screen.code("─"), fg: 0, bg: 7) }
+                s.put(row, c1, Screen.code("┤"), fg: 0, bg: 7)
+                continue
+            }
+            let on = enabled(it), sel = i == item
+            let fg: UInt8 = sel ? 7 : (on ? 0 : 8), bg: UInt8 = sel ? 0 : 7
+            let mark = it.state == .on ? "•" : " "
+            var line = mark + en.label
+            line += String(repeating: " ", count: max(1, w - 2 - line.count - en.hint.count - 1)) + en.hint + " "
+            s.text(row, c0 + 1, line, fg: fg, bg: bg)
+            if on, let k = en.hotkey, let at = Array(en.label.lowercased()).firstIndex(of: k) {
+                let col = c0 + 2 + at
+                s.put(row, col, s.codes[row * 80 + col], fg: 15, bg: bg)
+            }
+        }
+    }
+
+    // MARK: Mouse
+
+    private var menuDragged = false
+
+    private func mouse(_ row: Int, _ col: Int, _ phase: ScreenView.MousePhase) {
+        switch mode {
+        case .editing:
+            guard phase == .down else { return }
+            if row == 0 { if let b = barHit(col) { openMenu(b, open: true); menuDragged = false } }
+            else if row >= editTop && row < editTop + editRows && col >= 1 && col <= editCols {
+                moveTo(top + row - editTop, left + col - 1)
+            } else if row == 24 { statusClick(col) }
+        case .menu(let bar, let open, _):
+            let hit = barHit(row == 0 ? col : -1)
+            let box = dropBox(bar)
+            let inItem = open && row > box.r0 && row < box.r1 && col > box.c0 && col < box.c1
+            switch phase {
+            case .down:
+                menuDragged = false
+                if let hit { if hit == bar && open { closeMenu() } else { openMenu(hit, open: true) } }
+                else if inItem { highlight(bar, row - box.r0 - 1) }
+                else { closeMenu() }
+            case .drag:
+                menuDragged = true
+                if let hit, hit != bar { openMenu(hit, open: true) }
+                else if inItem { highlight(bar, row - box.r0 - 1) }
+            case .up:
+                if inItem { choose(bar, row - box.r0 - 1) }
+                else if menuDragged && hit == nil { closeMenu() }
+            }
+        case .dialog, .help:
+            if phase == .up { mode = .editing; render() }
+        case .finished, .viewingOutput:
+            if phase == .up { backToEditor() }
+        case .running:
+            break
+        }
+    }
+
+    private func highlight(_ bar: Int, _ index: Int) {
+        guard entries(bar).indices.contains(index), entries(bar)[index].item != nil else { return }
+        mode = .menu(bar: bar, open: true, item: index); render()
+    }
+
+    private func barHit(_ col: Int) -> Int? {
+        let all = bars
+        for (i, c) in barColumns().enumerated() where col >= c - 1 && col <= c + all[i].submenu!.title.count { return i }
+        return nil
+    }
+
+    private static let statusText = "<F1=Help> <F5=Run> <F4=Output> <F9=Sound: "
+    private func statusClick(_ col: Int) {
+        let t = Array(IDE.statusText)
+        guard col >= 1, col - 1 < t.count + 12 else { return }
+        let i = min(col - 1, t.count - 1)
+        // Find the <...> field the click is in.
+        var start = i
+        while start > 0 && t[start] != "<" { start -= 1 }
+        switch String(t[start..<min(start + 3, t.count)]) {
+        case "<F1": mode = .help(0); render()
+        case "<F5": run()
+        case "<F4": toggleOutput()
+        case "<F9": cycleSound()
+        default: break
+        }
+    }
+
+    func showHelp() { if case .editing = mode { mode = .help(0); render() } }
 
     private func editKey(_ e: NSEvent, ctrl: Bool, lower: String, fkey: Int) {
         let shift = e.modifierFlags.contains(.shift)
@@ -397,9 +649,11 @@ final class IDE {
 
         // Menu bar.
         for c in 0..<80 { s.put(0, c, 32, fg: 0, bg: 7) }
-        s.text(0, 2, "File  Edit  Run  Sound", fg: 0, bg: 7)
-        s.text(0, 73, "Help", fg: 0, bg: 7)
-        for (col, len) in [(2, 1), (8, 1), (14, 1), (19, 1), (73, 1)] { s.put(0, col, s.codes[col], fg: 15, bg: 7); _ = len }
+        for (b, col) in zip(bars, barColumns()) {
+            let t = b.submenu!.title
+            s.text(0, col, t, fg: 0, bg: 7)
+            s.put(0, col, Screen.code(t.first!), fg: 15, bg: 7)
+        }
 
         // Frame with the file name.
         let title = " " + displayName + " "
@@ -424,7 +678,7 @@ final class IDE {
 
         // Status bar.
         for c in 0..<80 { s.put(24, c, 32, fg: 0, bg: 3) }
-        s.text(24, 1, "<F1=Help> <F5=Run> <F4=Output> <F9=Sound: \(Speaker.shared.output.rawValue)>", fg: 0, bg: 3)
+        s.text(24, 1, IDE.statusText + "\(Speaker.shared.output.rawValue)>", fg: 0, bg: 3)
         let pos = String(format: "%05d:%03d", cy + 1, cx + 1)
         s.text(24, 80 - pos.count - 1, pos, fg: 0, bg: 3)
         s.put(24, 80 - pos.count - 3, Screen.code("│"), fg: 0, bg: 3)
@@ -437,6 +691,9 @@ final class IDE {
         switch mode {
         case .dialog(let msg): drawDialog(s, msg)
         case .help(let page): drawHelp(s, page)
+        case .menu(let bar, let open, let item):
+            drawMenu(s, bar: bar, open: open, item: item)
+            s.cursorVisible = false
         default: break
         }
         s.touch()

@@ -22,6 +22,7 @@ This builds `TrackBASIC.app` for Apple Silicon and Intel and opens it with `WELC
 
 | Key | |
 |---|---|
+| Alt (Option) or F10 | Enter the menu bar; arrows and Enter to pick, Esc to leave. Alt+letter opens a menu. The mouse works too |
 | F5 / ⌘R | Run |
 | Ctrl+C / ⌘. | Stop a running program |
 | F4 | Show the output screen |

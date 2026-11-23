@@ -25,7 +25,26 @@ final class ScreenView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { true }
+    var onFlags: ((NSEvent) -> Void)?
+    /// Mouse events as text cells: (row, column, phase).
+    var onMouse: ((Int, Int, MousePhase) -> Void)?
+    enum MousePhase { case down, drag, up }
+
     override func keyDown(with event: NSEvent) { onKey?(event) }
+    override func flagsChanged(with event: NSEvent) { onFlags?(event) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { mouse(event, .down) }
+    override func mouseDragged(with event: NSEvent) { mouse(event, .drag) }
+    override func mouseUp(with event: NSEvent) { mouse(event, .up) }
+
+    private func mouse(_ event: NSEvent, _ phase: MousePhase) {
+        let p = convert(event.locationInWindow, from: nil)
+        let area = displayRect()
+        let s = screen
+        let col = Int(((p.x - area.minX) / area.width * CGFloat(s.cols)).rounded(.down))
+        let row = Int(((p.y - area.minY) / area.height * CGFloat(s.rows)).rounded(.down))
+        onMouse?(row, col, phase)
+    }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // Ctrl+key combinations go to the editor or program, not the menu.
         if event.modifierFlags.contains(.control) && !event.modifierFlags.contains(.command) { onKey?(event); return true }
