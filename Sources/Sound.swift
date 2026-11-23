@@ -186,6 +186,8 @@ struct HapticStyle {
 final class Speaker {
     static let shared = Speaker()
     var style = HapticStyle()
+    /// How long a motor call usually takes (a running average).
+    private var callTime = 0.01
 
     let motor = HapticMotor()
     private lazy var square = SquareWave()
@@ -215,11 +217,14 @@ final class Speaker {
                 let now = mach_absolute_time()
                 guard now < end else { break }
                 let t = Double(now - start) / ticksPerSecond
-                let left = seconds - t
-                if left < 0.004 { break }
-                let len = min(seg, left + 0.002)
+                // Always whole segments, so every actuation is one the motor has already built (building a
+                // new one costs ~4 ms). The call itself takes ~10 ms, so don't start one that would
+                // return after the note should have ended.
+                if seconds - t < max(seg / 2, callTime) { break }
                 let env = s.sustain + (1 - s.sustain) * exp(-t / max(s.decay, 0.0001))
-                motor.play(tones, ms: len * 1000, level: Float(env * s.level))
+                motor.play(tones, ms: seg * 1000, level: Float(env * s.level))
+                let took = Double(mach_absolute_time() - now) / ticksPerSecond
+                callTime = callTime * 0.9 + min(took, 0.05) * 0.1
                 next = max(next + UInt64(seg * ticksPerSecond), now)
                 waitUntil(min(next, end), stop: stop)
             }

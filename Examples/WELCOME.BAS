@@ -25,7 +25,7 @@ LOOP
 PRINT
 COLOR 11: PRINT "  2. A scale with PLAY"
 COLOR 7
-PLAY "T180 O4 L8 CDEFGAB>C"
+PLAY "T180 L8 O4 A# >C D D# F G A A#"
 
 PRINT
 COLOR 11: PRINT "  3. Ode to Joy (Beethoven, 1824), in D: the key that suits the glass"
@@ -37,6 +37,6 @@ PRINT
 COLOR 10
 PRINT "  Now try File > Examples, or press Esc and write your own:"
 COLOR 15
-PRINT "      PLAY "; CHR$(34); "T120 O4 C D E F G"; CHR$(34)
+PRINT "      PLAY "; CHR$(34); "T120 O5 D E F# G A"; CHR$(34)
 COLOR 7
 BEEP

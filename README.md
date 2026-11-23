@@ -69,6 +69,12 @@ MacBook's own microphone (`--listen`, below). Measured on a MacBook Pro (MacBook
   the quiet spots helps a lot: Ode to Joy in D major (`O5`) has its weakest note 6 dB stronger than in
   C major, and it's 3 dB louder overall.
 
+The other examples got the same treatment: every key of each tune was scored against the measured
+note levels, then the best ones were recorded and compared with the originals. Für Elise moved up 6
+semitones (+3.7 dB, weakest note +5.7 dB), Greensleeves up 6 (+1.2 dB, the right pitch heard loudest
+twice as often), Twinkle up 1 (+1 dB), WELCOME's scale to B♭ (+2.9 dB). EFFECTS' coin and telephone
+moved out of the 1 kHz dead spot (+4.6 dB and +3.5 dB).
+
 For Ode to Joy, compared with the first version: about 1 dB louder on average, on tempo instead of
 42–60% slow, notes that swing 8 dB in level instead of 22 dB, rests between notes about twice as deep
 (−11 dB against −6 dB), and the right pitch heard loudest on 17–23 of 30 notes instead of 5–7.

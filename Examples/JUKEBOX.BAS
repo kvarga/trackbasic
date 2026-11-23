@@ -1,4 +1,7 @@
 ' JUKEBOX.BAS - public-domain tunes played on the trackpad with PLAY.
+' Each tune is in the key that suits the trackpad glass best, found by playing every key and
+' recording it with the MacBook's microphone. The glass is quiet from O4 B to O5 C# and from
+' O5 B to O6 C#, so the keys avoid those notes.
 DECLARE SUB Frame ()
 
 DO
@@ -18,12 +21,12 @@ DO
         PLAY "T150 O5 L4 F#F#GA AGF#E DDEF# F#.E8E2"
         PLAY "F#F#GA AGF#E DDEF# E.D8D2"
     CASE "2"
-        PLAY "T110 O5 L16 ED#ED#E<B>DC<A8 P16 CEAB8 P16 EG#BB>C8 P16 <E>ED#ED#E<B>DC<A8 P16 CEAB8 P16 E>C<BA4"
+        PLAY "T110 L16 O5 A#AA#AA# FG#F# D#8 P16 <F#A#>D# F8 P16 <A#>DF F#8 P16 <A#>A#AA#AA# FG#F# D#8 P16 <F#A#>D# F8 P16 <A#>F#F D#4"
     CASE "3"
-        PLAY "T140 O4 L4 CCGGAAG2 FFEEDDC2 GGFFEED2 GGFFEED2 CCGGAAG2 FFEEDDC2"
+        PLAY "T140 L4 O4 C#C#G#G#A#A#G#2 F#F#FFD#D#C#2 G#G#F#F#FFD#2 G#G#F#F#FFD#2 C#C#G#G#A#A#G#2 F#F#FFD#D#C#2"
     CASE "4"
-        PLAY "T120 O4 L8 A>C4D E.F16E D4<B G.A16B >C4<A A.G#16A B4G# E4A"
-        PLAY ">C4D E.F16E D4<B G.A16B >C<B A G#.F#16G# A4.A4."
+        PLAY "T120 L8 O5 D#F#4G# A#.B16A# G#4F C#.D#16F F#4D# D#.D16D# F4D <A#4>D#"
+        PLAY "F#4G# A#.B16A# G#4F C#.D#16F F#FD# D.C16D D#4. D#4."
     CASE "5"
         FOR o = 1 TO 6
             PLAY "T220 L16 O" + LTRIM$(STR$(o)) + "CDEFGAB"

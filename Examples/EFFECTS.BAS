@@ -24,13 +24,13 @@ GOSUB WaitKey
 
 PRINT "Telephone..."
 FOR r = 1 TO 2
-    FOR n = 1 TO 15: SOUND 1000, .5: SOUND 800, .5: NEXT
+    FOR n = 1 TO 15: SOUND 1568, .5: SOUND 1397, .5: NEXT
     SLEEP 1
 NEXT
 GOSUB WaitKey
 
 PRINT "Coin!"
-SOUND 988, 1.5: SOUND 1319, 5
+SOUND 1319, 1.5: SOUND 1760, 5
 GOSUB WaitKey
 
 PRINT "Power up!"
