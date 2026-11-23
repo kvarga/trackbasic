@@ -90,15 +90,27 @@ final class HapticMotor {
 
     /// Plays sine tones together for `ms` at `level` (0…1). Never past the motor's normal maximum.
     func play(_ tones: [(hz: Double, amp: Double)], ms: Double, level: Float) {
-        guard let motorPointer, !tones.isEmpty else { return }
+        guard let motorPointer, !tones.isEmpty, let act = actuation(tones, ms: ms) else { return }
+        _ = actuationPlay!(act, motorPointer, 0, min(1, max(0, level)), 0)
+    }
+
+    /// Actuations are built once per shape and kept: building one costs more than playing it.
+    private var cache: [String: UnsafeMutableRawPointer] = [:]
+    private func actuation(_ tones: [(hz: Double, amp: Double)], ms: Double) -> UnsafeMutableRawPointer? {
+        let key = tones.map { String(format: "%.2f:%.3f", $0.hz, $0.amp) }.joined(separator: ",") + String(format: "@%.2f", ms)
+        if let a = cache[key] { return a }
         let sum = max(tones.reduce(0) { $0 + $1.amp }, 0.0001)
         let shape: [String: Any] = [
             "BaseWaveform": ["Type": "Gaussian", "Amplitude": 0.0, "DurationMS": ms],
             "Tones": tones.map { ["Type": "Sine", "Amplitude": $0.amp / sum, "DurationMS": ms, "DelayMS": 0.0, "FrequencykHz": $0.hz / 1000] },
         ]
-        guard let act = actuationCreate!(shape as CFDictionary, 0) else { return }
-        _ = actuationPlay!(act, motorPointer, 0, min(1, max(0, level)), 0)
-        Unmanaged<AnyObject>.fromOpaque(act).release()
+        guard let act = actuationCreate!(shape as CFDictionary, 0) else { return nil }
+        if cache.count > 2000 {
+            for (_, a) in cache { Unmanaged<AnyObject>.fromOpaque(a).release() }
+            cache.removeAll()
+        }
+        cache[key] = act
+        return act
     }
 }
 
@@ -151,8 +163,29 @@ enum SoundOutput: String, CaseIterable {
     case off = "Off"
 }
 
+/// How a note is synthesised on the motor. The defaults were tuned by playing melodies and recording
+/// them with the MacBook's own microphone (see `--listen`):
+///  - One actuation gives a burst of only ~30 ms however long it's asked to be, so a note is a stream of
+///    short actuations. 15 ms ones join into a steady tone.
+///  - The driver takes ~9 ms per actuation up to level 0.6, then throttles more and more (~30 ms per
+///    call at 1.0), which made notes run long and stutter. 0.7 is the loudest level that stays steady.
+struct HapticStyle {
+    /// Each actuation lasts a whole number of periods, about this long.
+    var segment = 0.015
+    /// When above 0, each actuation is exactly this many periods instead (restarts at the note's pitch).
+    var periods = 0
+    /// Tones played together: multiples of the note's frequency and their relative strength.
+    var partials: [(mult: Double, amp: Double)] = [(1, 1)]
+    /// Level envelope: starts at 1, falls toward `sustain` with time constant `decay` (seconds).
+    var sustain = 1.0
+    var decay = 0.05
+    /// Peak motor strength (0…1).
+    var level = 0.7
+}
+
 final class Speaker {
     static let shared = Speaker()
+    var style = HapticStyle()
 
     let motor = HapticMotor()
     private lazy var square = SquareWave()
@@ -164,8 +197,7 @@ final class Speaker {
     }
 
     /// Plays one note for `seconds`, blocking the caller (QBasic's foreground music). `hz` of 0 is a rest.
-    /// The motor is played in whole periods of the wave (about 20 ms at a time), as nospeaker does, so
-    /// segments join without clicks.
+    /// The motor is played in whole periods of the wave (about 15 ms at a time), so segments join cleanly.
     func tone(hz: Double, seconds: Double, stop: () -> Bool) {
         guard seconds > 0 else { return }
         let start = mach_absolute_time()
@@ -173,14 +205,25 @@ final class Speaker {
         let audible = hz >= 37 && hz <= 32767
         switch output {
         case .trackpad where audible && motor.available:
-            var t = 0.0
-            while t < seconds && !stop() {
-                let seg = max(1, (0.02 * hz).rounded()) / hz
-                let len = min(seg, seconds - t + 0.002)
-                motor.play([(hz, 1)], ms: len * 1000, level: 1)
-                t += seg
-                waitUntil(start + UInt64(min(t, seconds) * ticksPerSecond), stop: stop)
+            let s = style
+            let seg = (s.periods > 0 ? Double(s.periods) : max(1, (s.segment * hz).rounded())) / hz
+            let tones = s.partials.map { (hz: hz * $0.mult, amp: $0.amp) }.filter { $0.hz <= 8000 }
+            // Timed by the real clock: if the driver is slow to take an actuation, the note gets fewer of
+            // them rather than running long, so the tempo stays right on any Mac.
+            var next = start
+            while !stop() {
+                let now = mach_absolute_time()
+                guard now < end else { break }
+                let t = Double(now - start) / ticksPerSecond
+                let left = seconds - t
+                if left < 0.004 { break }
+                let len = min(seg, left + 0.002)
+                let env = s.sustain + (1 - s.sustain) * exp(-t / max(s.decay, 0.0001))
+                motor.play(tones, ms: len * 1000, level: Float(env * s.level))
+                next = max(next + UInt64(seg * ticksPerSecond), now)
+                waitUntil(min(next, end), stop: stop)
             }
+            waitUntil(end, stop: stop)
         case .speakers where audible:
             square.set(hz)
             waitUntil(end, stop: stop)

@@ -504,9 +504,9 @@ final class IDE {
             "SOUND",
             "  SOUND freq, ticks      freq 37-32767 Hz, 18.2 ticks a second",
             "  PLAY \"T120 O4 L8 CDEFGAB > C\"     BEEP",
-            "  The motor is loudest between about 400 Hz and 4 kHz; its",
-            "  cleanest notes are near 1 kHz (PLAY's default octave O4 is",
-            "  right there).",
+            "  Loudest from O4 G to O5 A# (784-1865 Hz). Quiet spots: O4 B",
+            "  to O5 C#, and O5 B to O6 C#. Pick a key that avoids them:",
+            "  Ode to Joy sounds best in D major, O5.",
         ],
         [
             "STATEMENTS",

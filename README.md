@@ -55,9 +55,23 @@ trapping (`ON ERROR`).
 
 ## Sound notes
 
-The motor is loudest from about 100 Hz to 4 kHz, and its cleanest notes are near 1 kHz. `PLAY`'s
-default octave (`O4`, where `A` is 880 Hz) is right in that sweet spot; `O2` and below get quiet.
-Each note is played in whole periods of the wave, about 20 ms at a time, the way nospeaker does.
+The sound settings were tuned by playing melodies on the trackpad and recording them with the
+MacBook's own microphone (`--listen`, below). Measured on a MacBook Pro (MacBookPro18,4):
+
+- **One actuation is one short burst.** However long it's asked to last, the motor sounds for about
+  30 ms, so a note is a stream of 15 ms actuations, each a whole number of periods of the wave.
+- **Full strength stalls the driver.** Up to level 0.6 the driver takes an actuation every ~9 ms; at 1.0
+  it slows to one every ~30 ms. At 1.0, Ode to Joy played 42–60% too slowly and every note stuttered at
+  about 29 Hz. TrackBASIC plays at 0.7, the loudest level that stays steady, and times each note by
+  the real clock, so a slower driver can't make the tempo drag.
+- **The glass has favourite notes.** Loudest from `O4 G` to `O5 A#` (784–1865 Hz), peaking at
+  `O5 G` (1568 Hz); quiet from `O4 B` to `O5 C#` and from `O5 B` to `O6 C#`. Choosing a key that avoids
+  the quiet spots helps a lot: Ode to Joy in D major (`O5`) has its weakest note 6 dB stronger than in
+  C major, and it's 3 dB louder overall.
+
+For Ode to Joy, compared with the first version: about 1 dB louder on average, on tempo instead of
+42–60% slow, notes that swing 8 dB in level instead of 22 dB, rests between notes about twice as deep
+(−11 dB against −6 dB), and the right pitch heard loudest on 17–23 of 30 notes instead of 5–7.
 
 MultitouchSupport is a private framework, so a macOS update could break the trackpad sound. The motor
 is never driven past its normal maximum strength.
@@ -73,6 +87,19 @@ build/dev --png out.png PROGRAM.BAS                           # render the edito
 ```
 
 In `--keys`, `|` is Enter. `--timeout SECONDS` stops a program that waits forever.
+
+Two more modes measure the trackpad itself (they need microphone access):
+
+```sh
+build/dev --listen "T150 O5 L4 F#F#GA AGF#E"     # play + record; score each note
+build/dev --listen "…" --style level=0.7,seg=0.015 --peaks --env
+build/dev --bench                                # how fast the driver takes actuations
+```
+
+`--listen` reports each note's level, how much of it is the note's harmonics, which pitch is heard
+loudest, flutter (level swing within a note), the silence between notes, and whether it kept tempo.
+`--style` tries other motor settings (`level`, `seg`, `periods`, `partials=1:1;2:0.5`, `sustain`,
+`decay`); `--peaks` lists each note's strongest frequencies; `--env` prints the level every 10 ms.
 
 ## Credits
 

@@ -272,6 +272,52 @@ if let i = CommandLine.arguments.firstIndex(of: "--dump"), i + 1 < CommandLine.a
     exit(status)
 }
 
+if CommandLine.arguments.contains("--bench") {
+    // How long one MTActuationActuate call takes, for actuations of different lengths.
+    let m = Speaker.shared.motor
+    for ms in [1.0, 2, 5, 10, 20, 40] {
+        var times: [Double] = []
+        for _ in 0..<12 {
+            let t0 = mach_absolute_time()
+            m.play([(1000, 1)], ms: ms, level: 0.6)
+            times.append(Double(mach_absolute_time() - t0) / ticksPerSecond * 1000)
+            usleep(useconds_t(ms * 1000 + 30_000))
+        }
+        times.sort()
+        print(String(format: "actuation %4.0f ms: call takes median %.2f ms, max %.2f ms", ms, times[6], times[11]))
+    }
+    for ms in [2.0, 5, 10, 19, 30] {
+        let t0 = mach_absolute_time()
+        for _ in 0..<20 { m.play([(1000, 1)], ms: ms, level: 0.6) }
+        let per = Double(mach_absolute_time() - t0) / ticksPerSecond * 1000 / 20
+        print(String(format: "back-to-back %4.0f ms actuations: %.1f ms per call", ms, per))
+        usleep(300_000)
+    }
+    for ms in [10.0, 19] {
+        var line = String(format: "%2.0f ms actuations, ms per call by level:", ms)
+        for lvl in [0.5, 0.6, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 1.0] as [Float] {
+            let t0 = mach_absolute_time()
+            for _ in 0..<20 { m.play([(784, 1)], ms: ms, level: lvl) }
+            line += String(format: "  %.2f→%.1f", lvl, Double(mach_absolute_time() - t0) / ticksPerSecond * 1000 / 20)
+            usleep(400_000)
+        }
+        print(line)
+    }
+    for secs in [0.22, 0.5] {
+        let t0 = mach_absolute_time()
+        Speaker.shared.tone(hz: 784, seconds: secs, stop: { false })
+        print(String(format: "tone(%.2fs) took %.0f ms", secs, Double(mach_absolute_time() - t0) / ticksPerSecond * 1000))
+        usleep(300_000)
+    }
+    let mic = MicRecorder(); try? mic.start(); usleep(300_000)
+    let t1 = mach_absolute_time()
+    Speaker.shared.tone(hz: 784, seconds: 0.5, stop: { false })
+    print(String(format: "with mic running: tone(0.50s) took %.0f ms", Double(mach_absolute_time() - t1) / ticksPerSecond * 1000))
+    mic.stop()
+    exit(0)
+}
+if CommandLine.arguments.contains("--listen") { exit(runListen(CommandLine.arguments)) }
+
 /// Render test: `TrackBASIC --png OUT.png [FILE.BAS]` draws the editor offscreen and saves it.
 if let i = CommandLine.arguments.firstIndex(of: "--png"), i + 1 < CommandLine.arguments.count {
     let args = CommandLine.arguments
