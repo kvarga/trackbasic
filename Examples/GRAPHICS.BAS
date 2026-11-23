@@ -7,7 +7,7 @@ RANDOMIZE TIMER
 FOR r = 95 TO 5 STEP -6
     c = 32 + (r MOD 72)
     CIRCLE (160, 100), r, c
-    PAINT (160, 100 - r + 2), c, c
+    PAINT (160, 100), c, c
     SOUND 300 + (100 - r) * 25, .8
 NEXT
 

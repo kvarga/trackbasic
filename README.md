@@ -1,5 +1,7 @@
 # TrackBASIC
 
+[Watch the 30-second demo](trackbasic-demo.mp4) (sound recorded from the trackpad with the MacBook's microphone).
+
 A QBasic-style IDE and interpreter for macOS whose PC speaker is your **MacBook trackpad**.
 
 `SOUND`, `PLAY` and `BEEP` don't go to the speakers: they drive the Force Touch trackpad's haptic
@@ -102,6 +104,10 @@ build/dev --listen "T150 O5 L4 F#F#GA AGF#E"     # play + record; score each not
 build/dev --listen "…" --style level=0.7,seg=0.015 --peaks --env
 build/dev --bench                                # how fast the driver takes actuations
 ```
+
+`build/dev --record OUTDIR Examples/DEMO.BAS` makes the demo video's raw material: it walks the menus to
+Run > Start, saves 30 fps frames of the screen, and records the trackpad with the microphone
+(`OUTDIR/frames.txt` and `OUTDIR/audio.wav`, ready for ffmpeg's concat input).
 
 `--listen` reports each note's level, how much of it is the note's harmonics, which pitch is heard
 loudest, flutter (level swing within a note), the silence between notes, and whether it kept tempo.

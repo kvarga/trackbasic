@@ -1,6 +1,7 @@
 // TrackBASIC: a QBasic-style IDE and interpreter whose PC speaker is the MacBook trackpad.
 
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
@@ -362,6 +363,98 @@ if let i = CommandLine.arguments.firstIndex(of: "--png"), i + 1 < CommandLine.ar
     let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
     v.cacheDisplay(in: v.bounds, to: rep)
     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: args[i + 1]))
+    exit(0)
+}
+
+/// Demo recording: `TrackBASIC --record OUTDIR FILE.BAS` shows the editor, walks the menus to Run > Start,
+/// runs the program on the trackpad, and saves 30 fps frames plus the microphone's recording of the
+/// trackpad (OUTDIR/frames/*.jpg, OUTDIR/frames.txt with each frame's time, OUTDIR/audio.wav).
+if let i = CommandLine.arguments.firstIndex(of: "--record"), i + 2 < CommandLine.arguments.count {
+    let args = CommandLine.arguments
+    let out = URL(fileURLWithPath: args[i + 1])
+    let frames = out.appendingPathComponent("frames")
+    try? FileManager.default.createDirectory(at: frames, withIntermediateDirectories: true)
+    _ = NSApplication.shared
+    let d = AppDelegate()
+    d.buildMenus()
+    let ide = d.ide
+    let path = args[i + 2]
+    ide.load(text: (try? String(contentsOfFile: path, encoding: .utf8)) ?? "", url: URL(fileURLWithPath: path))
+    let v = ide.view
+    v.frame = NSRect(x: 0, y: 0, width: 640, height: 480)
+
+    func press(_ chars: String) {
+        let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                                 context: nil, characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: 0)!
+        v.onKey?(e)
+    }
+    func key(_ k: Int) { press(String(UnicodeScalar(UInt16(k))!)) }
+    func altTap() {
+        for flags in [NSEvent.ModifierFlags.option, []] {
+            v.onFlags?(NSEvent.keyEvent(with: .flagsChanged, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                                        context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 58)!)
+        }
+    }
+    // The opening: editor, then Alt, File, Edit, Run, Start.
+    let script: [(Double, () -> Void)] = [
+        (1.6, altTap), (2.2, { key(NSDownArrowFunctionKey) }), (3.0, { key(NSRightArrowFunctionKey) }),
+        (3.6, { key(NSRightArrowFunctionKey) }), (4.4, { press("\r") }),
+    ]
+
+    let mic = MicRecorder()
+    do { try mic.start() } catch { print("microphone: \(error)"); exit(1) }
+    usleep(400_000)
+    let t0 = mach_absolute_time()
+    let writeQueue = DispatchQueue(label: "frames", attributes: .concurrent)
+    let group = DispatchGroup()
+    var times: [Double] = []
+    var next = 0, finishedAt: Double?
+    let maxSeconds = Double(args.firstIndex(of: "--seconds").map { args[$0 + 1] } ?? "32") ?? 32
+    while true {
+        let now = Double(mach_absolute_time() - t0) / ticksPerSecond
+        while next < script.count && script[next].0 <= now { script[next].1(); next += 1 }
+        if next == script.count && finishedAt == nil && !ide.isRunning { finishedAt = now }
+        if let f = finishedAt, now > f + 1.5 { break }
+        if now > maxSeconds { ide.stop(); break }
+        let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds)!
+        v.cacheDisplay(in: v.bounds, to: rep)
+        let n = times.count
+        times.append(now)
+        group.enter()
+        writeQueue.async {
+            let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.92])
+            try? jpg?.write(to: frames.appendingPathComponent(String(format: "%05d.jpg", n)))
+            group.leave()
+        }
+        // Next frame on the 30 fps grid; let the main queue run meanwhile (the interpreter reports back on it).
+        let due = Double(n + 1) / 30
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: max(0.001, due - (Double(mach_absolute_time() - t0) / ticksPerSecond))))
+    }
+    let tEnd = mach_absolute_time()
+    usleep(300_000)
+    mic.stop()
+    group.wait()
+    // Audio from t0, shifted by the ~40 ms it takes the motor's sound to reach the microphone.
+    let all = mic.snapshot()
+    let from = max(0, mic.index(at: t0) + Int(0.04 * mic.sampleRate))
+    let to = min(all.count, mic.index(at: tEnd) + Int(0.04 * mic.sampleRate))
+    let x = from < to ? Array(all[from..<to]) : []
+    let fmt = AVAudioFormat(standardFormatWithSampleRate: mic.sampleRate, channels: 1)!
+    if let file = try? AVAudioFile(forWriting: out.appendingPathComponent("audio.wav"), settings: fmt.settings),
+       let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: AVAudioFrameCount(max(1, x.count))) {
+        buf.frameLength = AVAudioFrameCount(x.count)
+        for (k, s) in x.enumerated() { buf.floatChannelData![0][k] = s }
+        try? file.write(from: buf)
+    }
+    // ffmpeg concat list: each frame shown until the next one was taken.
+    var list = ""
+    for (k, t) in times.enumerated() {
+        let dur = (k + 1 < times.count ? times[k + 1] : t + 1.0 / 30) - t
+        list += "file 'frames/\(String(format: "%05d.jpg", k))'\nduration \(String(format: "%.4f", dur))\n"
+    }
+    list += "file 'frames/\(String(format: "%05d.jpg", times.count - 1))'\n"
+    try? list.write(to: out.appendingPathComponent("frames.txt"), atomically: true, encoding: .utf8)
+    print(String(format: "%d frames over %.1f s, %.1f s of audio", times.count, times.last ?? 0, Double(x.count) / mic.sampleRate))
     exit(0)
 }
 
